@@ -1,3 +1,10 @@
-# Starting project 
+# Development
 
-docker-compose -f ops/docker/docker-compose.yaml up  
+docker-compose up -d
+
+yarn start:dev
+
+# Production
+
+docker-compose -f ops/docker/docker-compose.prod.yaml up  
+

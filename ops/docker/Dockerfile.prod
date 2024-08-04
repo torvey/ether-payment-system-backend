@@ -8,10 +8,8 @@ COPY yarn.lock ./
 
 RUN yarn
 
-COPY src ./src
-
 COPY . .
 
 RUN yarn build
 
-CMD [ "yarn", "start:dev" ]
+CMD [ "yarn", "start:prod" ]
