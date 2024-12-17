@@ -20,6 +20,6 @@ services:
     environment:
       - PORT=${PORT}
     ports:
-      - '3000:3000'
+      - '8000:8000'
     depends_on:
       - db
