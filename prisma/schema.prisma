@@ -19,6 +19,7 @@ model User {
   password           String
   TwoFactorCode      TwoFactorCode[]
   AuthorizationToken AuthorizationToken[]
+  Settings           Settings[]
 }
 
 model TwoFactorCode {
@@ -40,4 +41,12 @@ model AuthorizationToken {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+}
+
+model Settings {
+  id         Int    @id @default(autoincrement())
+  userId     Int    @unique
+  user       User   @relation(fields: [userId], references: [id])
+  apiKey     String @unique
+  domainName String
 }

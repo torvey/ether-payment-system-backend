@@ -21,6 +21,20 @@ export class JwtAuthGuard extends AuthGuard('jwt') {
     // Wywołaj domyślne działanie guardu JWT
     const canActivate = (await super.canActivate(context)) as boolean;
 
-    return canActivate;
+    if (!canActivate) {
+      return false;
+    }
+
+    const request = context.switchToHttp().getRequest();
+
+    const user = request.user;
+
+    if (!user || !user.userId) {
+      return false;
+    }
+
+    request.user = user;
+
+    return true;
   }
 }
