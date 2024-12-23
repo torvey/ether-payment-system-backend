@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { Product } from '@prisma/client';
+import { FixedNumber } from 'ethers';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { TwoFactorService } from 'src/two-factor/two-factor.service';
 
@@ -13,7 +14,7 @@ export class ProductsService {
   async create(
     data: {
       name: string;
-      priceUsd: number;
+      priceUsd: string;
       description: string;
     },
     userId: number,
@@ -27,11 +28,16 @@ export class ProductsService {
   }
 
   private async includePriceEth(products: Product[]): Promise<Product[]> {
-    const ethRate = await this.getEthRate(); // Pobierz kurs ETH
-    return products.map((product) => ({
-      ...product,
-      priceEth: product.priceUsd / ethRate,
-    }));
+    const ethRate = FixedNumber.fromString(await this.getEthRate()); // Pobierz kurs ETH
+    return products.map((product) => {
+      const priceUsd = FixedNumber.fromString(product.priceUsd);
+      const priceEth = priceUsd.divUnsafe(ethRate);
+
+      return {
+        ...product,
+        priceEth: priceEth.toString(),
+      };
+    });
   }
 
   async findAll(): Promise<Product[]> {
@@ -39,7 +45,7 @@ export class ProductsService {
     return await this.includePriceEth(products);
   }
 
-  async findOne(id: number): Promise<Product & { priceEth: number }> {
+  async findOne(id: number): Promise<Product & { priceEth: string }> {
     const product = await this.prisma.product.findUnique({
       where: { id },
     });
@@ -48,15 +54,18 @@ export class ProductsService {
       throw new Error('Product not found');
     }
 
-    const ethRate = await this.getEthRate(); // Pobierz kurs ETH
+    const ethRate = FixedNumber.fromString(await this.getEthRate());
+    const priceUsd = FixedNumber.fromString(product.priceUsd);
+    const priceEth = priceUsd.divUnsafe(ethRate); // Obliczanie ETH
 
     return {
       ...product,
-      priceEth: product.priceUsd / ethRate,
+      priceEth: priceEth.toString(),
     };
   }
 
   async update(id: number, data: Partial<Product>): Promise<Product> {
+    console.log(data);
     return this.prisma.product.update({ where: { id }, data });
   }
 
@@ -64,9 +73,9 @@ export class ProductsService {
     return this.prisma.product.delete({ where: { id } });
   }
 
-  private async getEthRate(): Promise<number> {
+  private async getEthRate(): Promise<string> {
     // Tutaj należy zaimplementować logikę pobierania kursu ETH/USD (np. przez API)
-    return 1600; // Przykładowa wartość kursu ETH
+    return '1600.00'; // Przykładowa wartość kursu ETH
   }
 
   async generateCode(userId: number): Promise<string> {
