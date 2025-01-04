@@ -26,12 +26,14 @@ export class ProductsService {
       data: {
         ...data,
         userId,
-        price: FixedNumber.fromString(data.price).toFormat(2).toString(),
+        price: FixedNumber.fromString(data.price).toFormat('2').toString(),
       },
     });
   }
 
-  private async includePriceEth(products: Product[]): Promise<Product[]> {
+  async includePriceEth(
+    products: Product[],
+  ): Promise<(Product & { priceEth: string })[]> {
     return Promise.all(
       products.map(async (product) => {
         const ethRate = await this.exchangeRateService.getLatestEthRate(

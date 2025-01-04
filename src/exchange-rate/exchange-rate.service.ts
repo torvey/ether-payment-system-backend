@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule'; // Importujemy Cron
-import { Currency } from '@prisma/client';
+import { Currency, ExchangeRate } from '@prisma/client';
 import { CurrencyConfig } from 'src/config/config';
 import { PrismaService } from 'src/prisma/prisma.service';
 
@@ -69,6 +69,15 @@ export class ExchangeRateService {
     }
 
     return exchangeRate.rate;
+  }
+
+  async getLatestRate(currency: Currency): Promise<ExchangeRate> {
+    return this.prisma.exchangeRate.findFirst({
+      where: { currency },
+      orderBy: {
+        updatedAt: 'desc',
+      },
+    });
   }
 
   private async fetchEthRatesFromAPI(): Promise<Record<Currency, string>> {
