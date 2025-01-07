@@ -1,24 +1,36 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
-import { PaymentStatus, PaymentStatusEnum, Product } from '@prisma/client';
-import { FixedNumber } from 'ethers';
+import {
+  Payment,
+  PaymentStatus,
+  PaymentStatusEnum,
+  Product,
+  Transaction,
+  Wallet,
+} from '@prisma/client';
+import { ethers, FixedNumber } from 'ethers';
 import { ExchangeRateService } from 'src/exchange-rate/exchange-rate.service';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { ProductsService } from 'src/products/products.service';
+import { TransactionService } from 'src/transaction/transaction.service';
 import { WalletService } from 'src/wallet/wallet.service';
-import { v4 as uuidv4 } from 'uuid'; // Biblioteka do generowania unikalnych identyfikatorów
+import { v4 as uuidv4 } from 'uuid';
 
 @Injectable()
 export class PaymentService {
+  private readonly logger = new Logger(PaymentService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly products: ProductsService,
     private readonly exchangeRates: ExchangeRateService,
     private readonly walletService: WalletService,
+    private readonly transactionService: TransactionService,
   ) {}
 
   private getAmountInEth(priceEth: string, quantity: number): string {
@@ -150,7 +162,25 @@ export class PaymentService {
     return paymentStatus.some((item) => item.name === status);
   }
 
-  async getPaymentDetails(id: string) {
+  getStatus(paymentStatus: PaymentStatus[]): PaymentStatusEnum {
+    if (paymentStatus.length === 1) return 'pending';
+
+    const statuses: PaymentStatusEnum[] = ['completed', 'expired', 'failed'];
+
+    return statuses.filter((status) =>
+      paymentStatus.map(({ name }) => name).includes(status),
+    )[0];
+  }
+
+  async getPaymentDetails(id: string): Promise<{
+    status: PaymentStatusEnum;
+    payment: Payment & {
+      product: Product;
+      wallet: Wallet;
+      PaymentStatus: PaymentStatus[];
+    };
+    transaction: Transaction;
+  }> {
     const payment = await this.prisma.payment.findUnique({
       where: {
         token: id,
@@ -159,36 +189,20 @@ export class PaymentService {
         PaymentStatus: true,
         product: true,
         wallet: true,
+        Transaction: true,
       },
     });
 
-    if (!payment) {
-      throw new NotFoundException('Płatność nie istnieje.');
-    }
+    let transaction: Transaction | undefined = undefined;
 
-    if (this.checkStatus(payment.PaymentStatus, 'completed')) {
-      throw new BadRequestException('Płatność jest już zakończona.');
-    }
-
-    if (this.checkStatus(payment.PaymentStatus, 'expired')) {
-      throw new BadRequestException('Płatność wygasła.');
-    }
-
-    if (this.checkStatus(payment.PaymentStatus, 'failed')) {
-      throw new BadRequestException('Płatność zakończona niepowodzeniem.');
-    }
-
-    if (new Date() > payment.expiresAt) {
-      await this.updatePaymentStatus(id);
-      throw new NotFoundException('Płatność wygasła');
+    if (payment.Transaction.length === 1) {
+      [transaction] = payment.Transaction;
     }
 
     return {
-      id: payment.id,
-      name: payment.product.name,
-      amount: payment.totalAmount,
-      cryptocurrency: payment.cryptocurrency,
-      address: payment.wallet.address,
+      status: this.getStatus(payment.PaymentStatus),
+      payment,
+      transaction,
     };
   }
 
@@ -238,30 +252,99 @@ export class PaymentService {
     });
   }
 
-  @Cron(CronExpression.EVERY_5_MINUTES)
-  async expirePayments() {
-    const now = new Date();
+  private async processPayment(payment: Payment & { wallet: Wallet }) {
+    try {
+      const { wallet, totalAmount, createdAt } = payment;
 
-    // Pobieramy płatności, które wygasły
-    const expiredPayments = await this.prisma.payment.findMany({
-      where: {
-        expiresAt: {
-          lte: now,
-        },
-        PaymentStatus: {
-          every: {
-            name: 'pending',
+      this.logger.log(
+        `Processing payment ID: ${payment.id} for wallet: ${wallet.address}`,
+      );
+
+      this.logger.log(`Fetching transactions for wallet: ${wallet.address}`);
+
+      const transactions =
+        await this.transactionService.getTransactionsForWallet(wallet.address);
+
+      const relevantTransactions = transactions.filter(
+        (tx) =>
+          tx.timestamp >= Math.floor(createdAt.getTime() / 1000) &&
+          tx.to?.toLowerCase() === wallet.address.toLowerCase(),
+      );
+
+      this.logger.log(
+        `Found ${relevantTransactions.length} transactions for wallet: ${wallet.address} and for payment ID: ${payment.id}`,
+      );
+
+      await Promise.all(
+        relevantTransactions.map((tx) =>
+          this.transactionService.saveTransaction(
+            payment.id,
+            wallet.id,
+            tx,
+            payment.createdAt,
+            'external',
+          ),
+        ),
+      );
+
+      this.logger.log(
+        ` New transactions for wallet: ${wallet.address} saved in database.`,
+      );
+
+      const totalReceived = relevantTransactions.reduce((sum, tx) => {
+        return sum.add(ethers.BigNumber.from(tx.value));
+      }, ethers.BigNumber.from(0));
+
+      this.logger.log(
+        `Total received for payment ID ${payment.id}: ${ethers.utils.formatEther(totalReceived)} ${payment.cryptocurrency}`,
+      );
+
+      // Sprawdzamy, czy wpłacono wystarczającą ilość środków
+      if (totalReceived.gte(ethers.utils.parseEther(totalAmount))) {
+        await this.prisma.paymentStatus.create({
+          data: {
+            name: 'completed',
+            paymentId: payment.id,
+            createdAt: new Date(),
           },
-        },
-      },
-    });
+        });
 
-    if (expiredPayments.length === 0) {
-      return;
+        this.logger.log(`Payment ID ${payment.id} marked as completed.`);
+        return;
+      }
+
+      this.logger.warn(
+        `Payment ID ${payment.id} has insufficient funds. Received: ${ethers.utils.formatEther(
+          totalReceived,
+        )} ETH, Required: ${totalAmount} ETH`,
+      );
+    } catch (paymentError) {
+      this.logger.error(
+        `Error processing payment ID: ${payment.id}`,
+        paymentError.stack,
+      );
+      throw paymentError;
     }
+  }
 
-    // Aktualizujemy status każdej płatności na `expired`
-    for (const payment of expiredPayments) {
+  async handleNotFinnishedPayment(
+    payment: Payment & { Transaction: Transaction[] },
+    now: Date,
+  ) {
+    const hasAnyTransaction = !!payment.Transaction.length;
+
+    if (hasAnyTransaction) {
+      await this.prisma.paymentStatus.create({
+        data: {
+          name: 'failed',
+          paymentId: payment.id,
+          createdAt: now,
+        },
+      });
+      this.logger.warn(
+        `Payment ID ${payment.id} marked as failed (has transactions).`,
+      );
+    } else {
       await this.prisma.paymentStatus.create({
         data: {
           name: 'expired',
@@ -269,8 +352,87 @@ export class PaymentService {
           createdAt: now,
         },
       });
+      this.logger.warn(`Payment ID ${payment.id} marked as expired.`);
+    }
+  }
+
+  async handlePayments(
+    pendingPayments: Array<
+      Payment & { wallet: Wallet; Transaction: Transaction[] }
+    >,
+  ) {
+    const now = new Date();
+
+    if (!pendingPayments.length) {
+      this.logger.log(`No pending payments found.`);
+      return;
     }
 
-    console.log(`${expiredPayments.length} - przeterminowane płatności.`);
+    await Promise.all(
+      pendingPayments.map((payment) => {
+        const isExpired = payment.expiresAt <= now;
+
+        if (isExpired) {
+          return this.handleNotFinnishedPayment(payment, now);
+        } else {
+          return this.processPayment(payment);
+        }
+      }),
+    );
+  }
+
+  async manualProcessPayments(address: string) {
+    this.logger.log(`Starting to process payments manually.`);
+
+    try {
+      const pendingPayments = await this.prisma.payment.findMany({
+        where: {
+          PaymentStatus: {
+            every: { name: 'pending' },
+          },
+          wallet: {
+            address,
+          },
+        },
+        include: {
+          wallet: true,
+          Transaction: true,
+        },
+      });
+
+      await this.handlePayments(pendingPayments);
+
+      this.logger.log(`Finished processing manually payments.`);
+    } catch (e) {
+      this.logger.error(`Failed to process manually payments.`, e.stack);
+      throw e;
+    }
+  }
+
+  @Cron(CronExpression.EVERY_MINUTE)
+  async autoProcessPayments() {
+    this.logger.log(`Starting to process payments automatically.`);
+
+    try {
+      // Pobierz płatności `pending`
+      const pendingPayments = await this.prisma.payment.findMany({
+        where: {
+          PaymentStatus: {
+            every: { name: 'pending' },
+          },
+        },
+        include: {
+          wallet: true,
+          Transaction: true,
+        },
+      });
+
+      this.handlePayments(pendingPayments);
+
+      this.logger.log(`Finished processing automaticaly payments.`);
+    } catch (e) {
+      this.logger.error(`Failed to process automaticaly payments.`, e.stack);
+      throw e;
+    }
   }
 }

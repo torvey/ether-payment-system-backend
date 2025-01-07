@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   ForbiddenException,
@@ -13,7 +14,6 @@ import { PrismaService } from 'src/prisma/prisma.service';
 import { GeneratePaymentLinkDto } from './dto/generate-payment-link.dto';
 import { PaymentService } from './payment.service';
 
-// @UseInterceptors(DynamicCorsInterceptor)
 @Controller('payment')
 export class PaymentController {
   constructor(
@@ -21,8 +21,6 @@ export class PaymentController {
     private readonly prisma: PrismaService,
   ) {}
 
-  // Ten endpoint sluzy do generowania unikalnego ID dla platnosci, ktory jest uzywany
-  // do tworzenia iframe czy potem do przeniesienia do płatności
   @Public()
   @Post('token')
   async generateToken(
@@ -75,6 +73,93 @@ export class PaymentController {
   @Public()
   @Get('details/:token')
   async getPaymentDetails(@Param('token') token: string) {
-    return this.paymentService.getPaymentDetails(token);
+    try {
+      const { payment, transaction, status } =
+        await this.paymentService.getPaymentDetails(token);
+
+      if (!payment) {
+        throw new NotFoundException('Płatność nie istnieje.');
+      }
+
+      const data = {
+        id: payment.id,
+        name: payment.product.name,
+        amount: payment.totalAmount,
+        cryptocurrency: payment.cryptocurrency,
+        address: payment.wallet.address,
+        hash: transaction?.transactionHash,
+      };
+
+      if (status === 'failed') {
+        throw new BadRequestException('Płatność zakończona niepowodzeniem.');
+      }
+
+      if (status === 'expired') {
+        return {
+          status,
+          message: 'Płatność wygasła.',
+          data,
+        };
+      }
+
+      if (new Date() > payment.expiresAt && status === 'pending') {
+        await this.paymentService.updatePaymentStatus(token);
+        return {
+          status: 'expired',
+          message: 'Płatność wygasła.',
+          data,
+        };
+      }
+
+      if (status === 'completed') {
+        return {
+          status,
+          message: 'Płatność została zakończona pomyślnie.',
+          data,
+        };
+      }
+
+      return {
+        status,
+        message: 'Płatność w toku',
+        data,
+      };
+    } catch (e) {
+      throw new BadRequestException('Wystąpił nieoczekiwany błąd');
+    }
+  }
+
+  @Public()
+  @Post('check-transactions/:token')
+  async checkTransactions(@Param('token') token: string) {
+    try {
+      const payment = await this.prisma.payment.findUnique({
+        where: {
+          token,
+        },
+        include: {
+          PaymentStatus: true,
+          wallet: true,
+        },
+      });
+
+      const status = this.paymentService.getStatus(payment.PaymentStatus);
+
+      if (status !== 'pending') {
+        return {
+          status,
+          message: 'Sprawdzanie zakończono pomyślnie',
+        };
+      }
+
+      await this.paymentService.manualProcessPayments(payment.wallet.address);
+
+      return {
+        status,
+        message: 'Sprawdzanie zakończono pomyślnie',
+      };
+    } catch (e) {
+      throw new BadRequestException('Wystąpił nieoczekiwany błąd');
+    }
   }
 }

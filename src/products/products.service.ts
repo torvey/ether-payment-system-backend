@@ -87,21 +87,41 @@ export class ProductsService {
     return this.prisma.product.delete({ where: { id } });
   }
 
-  // private async getEthRate(currency: Currency): Promise<string> {
-  //   const rates = {
-  //     USD: '1600.00', // 1 ETH = 1600 USD
-  //     EURO: '1500.00', // 1 ETH = 1500 EURO
-  //     GBP: '1400.00', // 1 ETH = 1400 GBP
-  //     PLN: '7000.00', // 1 ETH = 7000 PLN
-  //   };
+  async getProductTransactions(product: Product, page: number, limit: number) {
+    const offset = (page - 1) * limit;
 
-  //   // Tutaj należy zaimplementować logikę pobierania kursu ETH/USD (np. przez API)
-  //   if (!rates[currency]) {
-  //     throw new Error(`Nieobsługiwana waluta: ${currency}`);
-  //   }
+    const transactions = await this.prisma.transaction.findMany({
+      where: {
+        payment: {
+          productId: product.id,
+        },
+      },
+      skip: offset,
+      take: limit,
+      orderBy: {
+        createdAt: 'desc',
+      },
+      include: {
+        payment: true,
+      },
+    });
 
-  //   return rates[currency];
-  // }
+    // Zwróć transakcje i informację o paginacji
+    const totalCount = await this.prisma.transaction.count({
+      where: {
+        payment: {
+          productId: product.id,
+        },
+      },
+    });
+
+    return {
+      transactions,
+      totalCount,
+      page,
+      totalPages: Math.ceil(totalCount / limit),
+    };
+  }
 
   async generateCode(userId: number): Promise<string> {
     return this.twoFactor.generateCode(userId);

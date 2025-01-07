@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { ethers } from 'ethers';
+import { encrypt } from 'ops/scripts/crypto-utils';
 import { PrismaService } from 'src/prisma/prisma.service';
 
 @Injectable()
@@ -31,13 +32,19 @@ export class WalletService {
     });
   }
 
+  async getWalletByAddress(address: string) {
+    return this.prisma.wallet.findUnique({
+      where: { address },
+    });
+  }
+
   async createWallet(): Promise<{ id: number; address: string }> {
     const wallet = ethers.Wallet.createRandom();
 
     const newWallet = await this.prisma.wallet.create({
       data: {
-        address: wallet.address, // Generowanie adresu (stub)
-        encryptedPrivateKey: await wallet.encrypt(process.env.ENCRYPTION_KEY),
+        address: wallet.address,
+        encryptedPrivateKey: encrypt(wallet.privateKey),
       },
     });
 

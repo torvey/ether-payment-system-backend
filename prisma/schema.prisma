@@ -21,6 +21,7 @@ model User {
   AuthorizationToken AuthorizationToken[]
   Settings           Settings[]
   Product            Product[]
+  ScheduledPayout    ScheduledPayout[]
 }
 
 model TwoFactorCode {
@@ -92,6 +93,7 @@ model Payment {
   product       Product         @relation(fields: [productId], references: [id])
   exchangeRate  ExchangeRate    @relation(fields: [exchangeRateId], references: [id])
   PaymentStatus PaymentStatus[]
+  Transaction   Transaction[]
 }
 
 model PaymentStatus {
@@ -111,6 +113,7 @@ model Wallet {
   updatedAt           DateTime        @updatedAt
   balances            WalletBalance[]
   Payment             Payment[]
+  Transaction         Transaction[]
 
   @@unique([isMain, id], name: "unique_main_wallet") // Gwarantuje, że tylko jedno konto z `isMain = true` będzie w bazie
 }
@@ -122,6 +125,33 @@ model WalletBalance {
   balance_eth String // Stan konta w ETH jako string (dla precyzji)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+model Transaction {
+  id              Int             @id @default(autoincrement())
+  paymentId       Int?
+  walletId        Int
+  transactionHash String          @unique
+  from            String
+  to              String
+  amount          String
+  type            TransactionType
+  createdAt       DateTime        @default(now())
+
+  payment Payment? @relation(fields: [paymentId], references: [id])
+  wallet  Wallet   @relation(fields: [walletId], references: [id])
+}
+
+model ScheduledPayout {
+  id        Int          @id @default(autoincrement())
+  userId    Int
+  amount    String // Kwota do wypłaty w ETH
+  address   String
+  status    PayoutStatus @default(pending) // Status wypłaty
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
 }
 
 enum Currency {
@@ -140,4 +170,15 @@ enum PaymentStatusEnum {
   completed
   failed
   expired
+}
+
+enum TransactionType {
+  external
+  internal
+}
+
+enum PayoutStatus {
+  pending
+  completed
+  failed
 }

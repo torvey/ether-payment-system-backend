@@ -4,11 +4,14 @@ import {
   Controller,
   Delete,
   Get,
+  NotFoundException,
   Param,
   Patch,
   Post,
+  Query,
   Req,
 } from '@nestjs/common';
+import { PrismaService } from 'src/prisma/prisma.service';
 import { UserRequest } from 'src/user/user.service';
 import { CreateProductDto } from './dto/create-product.dto';
 import { DeleteProductDto } from './dto/delete-product.dto';
@@ -17,7 +20,10 @@ import { ProductsService } from './products.service';
 
 @Controller('products')
 export class ProductsController {
-  constructor(private readonly productsService: ProductsService) {}
+  constructor(
+    private readonly productsService: ProductsService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   @Post()
   create(
@@ -82,5 +88,35 @@ export class ProductsController {
     }
 
     throw new BadRequestException('Invalid code');
+  }
+
+  @Get(':id/transactions')
+  async getProductTransactions(
+    @Param('id') productId: number,
+    @Query('page') page: number = 1,
+    @Query('limit') limit: number = 10,
+    @Req() req: UserRequest,
+  ) {
+    const userId = req.user.userId;
+
+    const product = await this.prisma.product.findUnique({
+      where: { id: Number(productId) },
+    });
+
+    if (!product || product.userId !== userId) {
+      throw new NotFoundException(`Product with ID ${productId} not found.`);
+    }
+
+    const transactions = await this.productsService.getProductTransactions(
+      product,
+      Number(page),
+      Number(limit),
+    );
+    if (!transactions) {
+      throw new NotFoundException(
+        `No transactions found for product ID ${productId}`,
+      );
+    }
+    return transactions;
   }
 }
