@@ -175,6 +175,7 @@ enum PaymentStatusEnum {
 enum TransactionType {
   external
   internal
+  payout
 }
 
 enum PayoutStatus {

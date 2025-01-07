@@ -1,4 +1,4 @@
-import { IsNotEmpty, IsString, Matches } from 'class-validator';
+import { IsNotEmpty, IsString, Length, Matches } from 'class-validator';
 
 export class PayoutRequestDto {
   @IsString()
@@ -7,4 +7,9 @@ export class PayoutRequestDto {
     message: 'Invalid Ethereum address format.',
   })
   address: string;
+
+  @IsString()
+  @IsNotEmpty({ message: 'Kod 2FA jest wymagany.' })
+  @Length(6, 6, { message: 'Kod 2FA musi mieć dokładnie 6 znaków.' })
+  code: string;
 }

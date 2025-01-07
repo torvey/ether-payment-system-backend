@@ -1,5 +1,6 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
+import { Cryptocurrency } from '@prisma/client';
 import { ethers } from 'ethers';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { TransferService } from 'src/transfer/transfer.service';
@@ -16,7 +17,9 @@ export class PayoutService {
   async schedulePayout(userId: number, address: string) {
     const { amount } = await this.getPayoutAmount(userId);
 
-    if (ethers.BigNumber.from(amount).isZero()) {
+    const parsedAmount = ethers.utils.parseEther(amount);
+
+    if (parsedAmount.isZero()) {
       throw new BadRequestException('No funds available for payout.');
     }
 
@@ -36,7 +39,27 @@ export class PayoutService {
   }
 
   // Pobierz kwotę do wypłaty dla użytkownika
-  async getPayoutAmount(userId: number): Promise<{ amount: string }> {
+  async getPayoutAmount(
+    userId: number,
+  ): Promise<{ amount: string; currency: Cryptocurrency }> {
+    const lastValidPayout = await this.prisma.scheduledPayout.findFirst({
+      where: {
+        userId,
+        status: {
+          in: ['pending', 'completed'],
+        },
+      },
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
+
+    let lastPayoutDate = new Date(0);
+
+    if (lastValidPayout) {
+      lastPayoutDate = lastValidPayout.createdAt;
+    }
+
     const transactions = await this.prisma.transaction.findMany({
       where: {
         payment: {
@@ -45,6 +68,9 @@ export class PayoutService {
           },
         },
         type: 'external',
+        createdAt: {
+          gt: lastPayoutDate,
+        },
       },
     });
 
@@ -52,7 +78,10 @@ export class PayoutService {
       return sum.add(ethers.BigNumber.from(ethers.utils.parseEther(tx.amount)));
     }, ethers.BigNumber.from(0));
 
-    return { amount: ethers.utils.formatEther(totalAmount) };
+    return {
+      amount: ethers.utils.formatEther(totalAmount),
+      currency: 'ETH',
+    };
   }
 
   @Cron(CronExpression.EVERY_HOUR)
@@ -79,15 +108,13 @@ export class PayoutService {
     const provider = new ethers.providers.JsonRpcProvider(
       process.env.ETHEREUM_RPC_URL,
     );
-    const balance = await provider.getBalance(mainWallet.address);
 
     for (const payout of pendingPayouts) {
       try {
-        if (
-          ethers.BigNumber.from(balance).lt(
-            ethers.BigNumber.from(payout.amount),
-          )
-        ) {
+        const balance = await provider.getBalance(mainWallet.address);
+        const payoutAmountInWei = ethers.utils.parseEther(payout.amount);
+
+        if (balance.lt(payoutAmountInWei)) {
           this.logger.log(
             `Insufficient funds for payout ID ${payout.id}. Skipping to the next.`,
           );
@@ -99,6 +126,18 @@ export class PayoutService {
           payout.address,
           payout.amount,
         );
+
+        await this.prisma.transaction.create({
+          data: {
+            walletId: mainWallet.id,
+            transactionHash: tx.hash,
+            from: mainWallet.address,
+            to: payout.address,
+            amount: payout.amount,
+            type: 'payout',
+            createdAt: new Date(),
+          },
+        });
 
         await this.prisma.scheduledPayout.update({
           where: { id: payout.id },
@@ -112,6 +151,7 @@ export class PayoutService {
           `Payout ID ${payout.id} completed successfully. Transaction hash: ${tx.hash}`,
         );
       } catch (error) {
+        console.log(error);
         this.logger.error(
           `Failed to process payout ID ${payout.id}. Reason: ${error.message}`,
         );

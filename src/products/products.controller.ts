@@ -46,14 +46,18 @@ export class ProductsController {
 
   @Post('generate-delete-code')
   async generateDeleteCode(@Req() req: UserRequest) {
-    await this.productsService.generateCode(req.user.userId);
+    const { email, userId } = req.user;
+
+    await this.productsService.generateCode(userId, email);
 
     return { message: 'Code generated' };
   }
 
   @Post('generate-edit-code')
   async generateEditCode(@Req() req: UserRequest) {
-    await this.productsService.generateCode(req.user.userId);
+    const { email, userId } = req.user;
+
+    await this.productsService.generateCode(userId, email);
 
     return { message: 'Code generated' };
   }

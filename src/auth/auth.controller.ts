@@ -59,8 +59,7 @@ export class AuthController {
       user.id,
     );
 
-    // TODO: docelowo wysyłać mailem
-    await this.twoFactorService.generateCode(user.id);
+    await this.twoFactorService.generateCode(user.id, user.email);
 
     return { message: 'Login successful', authorizationToken };
   }

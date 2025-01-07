@@ -24,15 +24,18 @@ export class TransferService {
       throw new Error(`Wallet with ID ${fromWalletId} not found.`);
     }
 
-    const provider = new ethers.providers.JsonRpcProvider(process.env.RPC_URL);
+    const provider = new ethers.providers.JsonRpcProvider(
+      process.env.ETHEREUM_RPC_URL,
+    );
     const balance = await provider.getBalance(wallet.address);
+    const amountInWei = ethers.utils.parseEther(amount);
 
-    if (ethers.BigNumber.from(balance).lt(ethers.BigNumber.from(amount))) {
+    if (balance.lt(amountInWei)) {
       throw new Error('Insufficient funds for transfer.');
     }
 
     const gasPrice = await provider.getGasPrice();
-    const gasLimit = 21000; // Typowa wartość dla prostego transferu ETH
+    const gasLimit = 21000;
     const totalGasCost = gasPrice.mul(gasLimit);
 
     if (totalGasCost.gt(this.networkFeeLimit)) {
@@ -41,7 +44,7 @@ export class TransferService {
       );
     }
 
-    const maxValue = ethers.BigNumber.from(amount).sub(totalGasCost);
+    const maxValue = amountInWei.sub(totalGasCost);
 
     const decryptedPrivateKey = await this.decryptPrivateKey(
       wallet.encryptedPrivateKey,

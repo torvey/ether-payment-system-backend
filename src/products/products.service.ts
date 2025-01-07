@@ -123,8 +123,8 @@ export class ProductsService {
     };
   }
 
-  async generateCode(userId: number): Promise<string> {
-    return this.twoFactor.generateCode(userId);
+  async generateCode(userId: number, email: string): Promise<string> {
+    return this.twoFactor.generateCode(userId, email);
   }
 
   async validateCode(userId: number, code: string): Promise<boolean> {
