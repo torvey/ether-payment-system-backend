@@ -1,0 +1,185 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id                 Int                  @id @default(autoincrement())
+  email              String               @unique
+  password           String
+  TwoFactorCode      TwoFactorCode[]
+  AuthorizationToken AuthorizationToken[]
+  Settings           Settings[]
+  Product            Product[]
+  ScheduledPayout    ScheduledPayout[]
+}
+
+model TwoFactorCode {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  code      String
+  expiresAt DateTime
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@index([userId])
+}
+
+model AuthorizationToken {
+  id        Int      @id @default(autoincrement())
+  userId    Int
+  token     String   @unique
+  expiresAt DateTime
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+model Settings {
+  id         Int    @id @default(autoincrement())
+  userId     Int    @unique
+  user       User   @relation(fields: [userId], references: [id])
+  apiKey     String @unique
+  domainName String
+}
+
+model Product {
+  id          Int       @id @default(autoincrement())
+  userId      Int
+  name        String
+  price       String
+  currency    Currency
+  description String
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  user        User      @relation(fields: [userId], references: [id])
+  Payment     Payment[]
+}
+
+model ExchangeRate {
+  id        Int       @id @default(autoincrement())
+  currency  Currency
+  rate      String
+  updatedAt DateTime  @default(now())
+  Payment   Payment[]
+}
+
+model Payment {
+  id             Int            @id @default(autoincrement())
+  productId      Int
+  quantity       Int
+  customerId     String
+  token          String         @unique
+  expiresAt      DateTime
+  exchangeRateId Int
+  totalAmount    String
+  cryptocurrency Cryptocurrency @default(ETH)
+  walletId       Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  wallet        Wallet          @relation(fields: [walletId], references: [id])
+  product       Product         @relation(fields: [productId], references: [id])
+  exchangeRate  ExchangeRate    @relation(fields: [exchangeRateId], references: [id])
+  PaymentStatus PaymentStatus[]
+  Transaction   Transaction[]
+}
+
+model PaymentStatus {
+  id        Int               @id @default(autoincrement())
+  name      PaymentStatusEnum
+  createdAt DateTime          @default(now())
+  paymentId Int
+  payment   Payment           @relation(fields: [paymentId], references: [id])
+}
+
+model Wallet {
+  id                  Int             @id @default(autoincrement())
+  address             String          @unique
+  encryptedPrivateKey String
+  isMain              Boolean         @default(false)
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+  balances            WalletBalance[]
+  Payment             Payment[]
+  Transaction         Transaction[]
+
+  @@unique([isMain, id], name: "unique_main_wallet") // Gwarantuje, że tylko jedno konto z `isMain = true` będzie w bazie
+}
+
+model WalletBalance {
+  id          Int      @id @default(autoincrement())
+  walletId    Int
+  wallet      Wallet   @relation(fields: [walletId], references: [id])
+  balance_eth String // Stan konta w ETH jako string (dla precyzji)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Transaction {
+  id              Int             @id @default(autoincrement())
+  paymentId       Int?
+  walletId        Int
+  transactionHash String          @unique
+  from            String
+  to              String
+  amount          String
+  type            TransactionType
+  createdAt       DateTime        @default(now())
+
+  payment Payment? @relation(fields: [paymentId], references: [id])
+  wallet  Wallet   @relation(fields: [walletId], references: [id])
+}
+
+model ScheduledPayout {
+  id        Int          @id @default(autoincrement())
+  userId    Int
+  amount    String // Kwota do wypłaty w ETH
+  address   String
+  status    PayoutStatus @default(pending) // Status wypłaty
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  user User @relation(fields: [userId], references: [id])
+}
+
+enum Currency {
+  USD
+  EUR
+  GBP
+  PLN
+}
+
+enum Cryptocurrency {
+  ETH
+}
+
+enum PaymentStatusEnum {
+  pending
+  completed
+  failed
+  expired
+}
+
+enum TransactionType {
+  external
+  internal
+  payout
+}
+
+enum PayoutStatus {
+  pending
+  completed
+  failed
+}
