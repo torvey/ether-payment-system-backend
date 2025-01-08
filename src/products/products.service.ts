@@ -26,7 +26,7 @@ export class ProductsService {
       data: {
         ...data,
         userId,
-        price: FixedNumber.fromString(data.price).toFormat('2').toString(),
+        price: parseFloat(data.price).toFixed(2),
       },
     });
   }
