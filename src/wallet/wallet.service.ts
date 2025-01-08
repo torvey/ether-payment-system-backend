@@ -1,6 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { ethers } from 'ethers';
-import { encrypt } from 'ops/scripts/crypto-utils';
+import { encrypt } from 'src/crypto-utils';
 import { PrismaService } from 'src/prisma/prisma.service';
 
 @Injectable()

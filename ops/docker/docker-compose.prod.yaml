@@ -17,6 +17,8 @@ services:
       context: ../..
       dockerfile: ops/docker/Dockerfile.prod
     container_name: nest-docker-postgres
+    env_file:
+      - ../../.env
     environment:
       - PORT=${PORT}
     ports:

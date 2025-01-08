@@ -1,7 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 import { ethers } from 'ethers';
-import { decrypt } from 'ops/scripts/crypto-utils';
+import { decrypt } from 'src/crypto-utils';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { WalletService } from 'src/wallet/wallet.service';
 
