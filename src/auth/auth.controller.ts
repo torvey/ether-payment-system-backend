@@ -68,10 +68,16 @@ export class AuthController {
   @Post('verify-2fa')
   async verify2fa(
     @Body()
-    { authorizationToken, code }: { authorizationToken: string; code: string },
+    {
+      twoFactorToken,
+      twoFactorCode,
+    }: {
+      twoFactorToken: string;
+      twoFactorCode: string;
+    },
   ) {
     const userId =
-      await this.authorizationTokenService.getTokenUser(authorizationToken);
+      await this.authorizationTokenService.getTokenUser(twoFactorToken);
 
     const user = await this.userService.findUserById(userId);
 
@@ -79,7 +85,10 @@ export class AuthController {
       throw new Error('User not found');
     }
 
-    const isValid = await this.twoFactorService.validateCode(userId, code);
+    const isValid = await this.twoFactorService.validateCode(
+      userId,
+      twoFactorCode,
+    );
 
     if (!isValid) {
       throw new Error('Invalid or expired code');

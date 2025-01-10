@@ -47,6 +47,8 @@ export class AuthorizationTokenService {
       },
     });
 
+    console.log(token, foundToken);
+
     return foundToken.userId;
   }
 

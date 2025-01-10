@@ -50,8 +50,15 @@ export class ProductsService {
     );
   }
 
-  async findAll(): Promise<Product[]> {
-    const products = await this.prisma.product.findMany();
+  async findAll(userId: number): Promise<Product[]> {
+    const products = await this.prisma.product.findMany({
+      where: {
+        userId,
+      },
+    });
+
+    console.log(products);
+
     return await this.includePriceEth(products);
   }
 

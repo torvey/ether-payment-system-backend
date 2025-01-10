@@ -1,8 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule'; // Importujemy Cron
 import { Currency, ExchangeRate } from '@prisma/client';
-import { CurrencyConfig } from 'src/config/config';
-import { PrismaService } from 'src/prisma/prisma.service';
+import { CurrencyConfig } from '../config/config';
+import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class ExchangeRateService {

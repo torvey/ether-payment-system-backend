@@ -33,7 +33,10 @@ export class TwoFactorService {
   }
 
   async generateCode(userId: number, email: string): Promise<string> {
-    const code = Math.floor(100000 + Math.random() * 900000).toString(); // 6-cyfrowy kod
+    const code =
+      process.env.NODE_ENV === 'test'
+        ? '123456'
+        : Math.floor(100000 + Math.random() * 900000).toString(); // 6-cyfrowy kod
     const expiresAt = new Date(Date.now() + 5 * 60 * 1000); // Kod ważny 5 minut
 
     // Utwórz nowy kod
@@ -59,6 +62,6 @@ export class TwoFactorService {
       },
     });
 
-    return !!validCode; // Zwraca true, jeśli kod jest poprawny
+    return !!validCode;
   }
 }
